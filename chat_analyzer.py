@@ -1,0 +1,130 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Jun 30 23:23:16 2023
+
+@author: DELL
+"""
+
+import re
+import pandas as pd
+import matplotlib.pyplot as plt
+%matplotlib inline
+f=open('whatsapp chat.txt','r',encoding='utf-8')
+data=f.read()
+
+pattern='\d{1,2}/\d{1,2}/\d{2,4},\s\d{1,2}:\d{2}\s-\s'
+messages=re.split(pattern,data)[1:]
+len(messages)
+dates=re.findall(pattern,data)
+dates
+df = pd.DataFrame({'user_message':messages,'message_date':dates})
+df['message_date']=pd.to_datetime(df['message_date'],format='%d/%m/%y, %H:%M - ')
+df.rename(columns={'message_date':'date'},inplace=True)
+
+users=[]
+messages=[]
+for message in df['user_message']:
+    entry = re.split('([\w\W]+?):\s',message)
+    if entry[1:]:
+        users.append(entry[1])
+        messages.append(entry[2])
+    else:
+        users.append('group Notification')
+        messages.append(entry[0])
+df['user']=users
+df['message']=messages
+df.drop(columns=['user_message'],inplace=True)
+df.head()
+df['year']=df['date'].dt.year
+df['month']=df['date'].dt.month_name()
+df['day']=df['date'].dt.day
+df['hour']=df['date'].dt.hour
+df['minute']=df['date'].dt.minute
+
+#IMPORTANT IMFORMATION
+print("IMPORTANT IMFORMATION")
+num_messages=df.shape[0]
+num_media=df[df['message'] =='<Media omitted>\n'].shape[0]
+words=[]
+for message in df['message']:
+    words.extend(message.split())
+from urlextract import URLExtract
+extractor = URLExtract()
+links=[]
+for message in df['message']:
+    links.extend(extractor.find_urls(message))
+print("TOTAL MESSAGES=",num_messages,"\nMEDIA SHARED=",num_media,"\nTOTAL WORDS=",len(words),"\nLINKS SHARED=",len(links))
+
+#MOST BUSY USER
+x=df['user'].value_counts().head()
+name=x.index
+count=x.values
+plt.bar(name,count,color='red')
+plt.title('Most busy users')
+plt.xlabel('Name')
+plt.ylabel('Messages')
+plt.show()
+print(round((df['user'].value_counts()/df.shape[0])*100,2).reset_index().rename(columns={'index':'name','user':'percent'}))
+
+#most common words
+temp=df[df['user']!='group Notification']
+temp=temp[temp['message']!='<Media omitted>\n']
+from collections import Counter
+words=[]
+for message in temp['message']:
+    words.extend(message.split())
+most_words=pd.DataFrame(Counter(words).most_common(20))
+import matplotlib.pyplot as plt
+%matplotlib inline
+plt.barh(most_words[0],most_words[1],color='orange')
+plt.title('Most Common Words')
+plt.xlabel('words')
+plt.ylabel('count of words')
+plt.show()
+
+#MONTHLY TIMELINE
+df['month_num']=df['date'].dt.month
+timeline=df.groupby(['year','month_num','month']).count()['message'].reset_index()
+time=[]
+for i in range(timeline.shape[0]):
+    time.append(timeline['month'][i]+"-"+str(timeline['year'][i]))
+timeline['time']=time
+plt.figure(figsize=(20,6))
+plt.plot(timeline['time'],timeline['message'],color='green')
+plt.xticks(rotation='vertical')
+plt.title('Monthly Timeline')
+plt.xlabel('Month')
+plt.ylabel('Messages')
+plt.show()
+
+#DAILY TIMELINE
+df['only_date']=df['date'].dt.date
+daily_timeline=df.groupby('only_date').count()['message'].reset_index()
+plt.plot(daily_timeline['only_date'],daily_timeline['message'])
+plt.title("Daily Timeline")
+plt.show()
+df['day_name']=df['date'].dt.day_name()
+
+#most busy day
+df['day_name'].value_counts().plot(kind='bar',title="Most busy day")
+plt.show()
+
+#most busy month
+df['month'].value_counts().plot(kind='bar',color="green",title="Most busy month")
+
+#weekly activity map
+period=[]
+for hour in df[['day_name','hour']]['hour']:
+    if hour == 23 :
+        period.append(str(hour) + "-"+str('00'))
+    elif hour==0 :
+        period.append(str('00')+"-"+str(hour+1))
+    else:
+        period.append(str(hour)+"-"+str(hour+1))
+df['period']=period
+import seaborn as sns
+plt.figure(figsize=(20,6))
+sns.heatmap(df.pivot_table(index='day_name',columns='period',values='message',aggfunc='count').fillna(0))
+plt.title("Weekly Activity map")
+plt.yticks(rotation='horizontal')
+plt.show()
